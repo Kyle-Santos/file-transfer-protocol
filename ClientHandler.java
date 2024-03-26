@@ -1,10 +1,14 @@
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Random;
 
 public class ClientHandler implements Runnable {
@@ -13,7 +17,8 @@ public class ClientHandler implements Runnable {
     private PrintWriter writer;
     private final int MIN_PASSIVE_PORT = 49152; // Minimum passive port number
     private final int MAX_PASSIVE_PORT = 65535; // Maximum passive port number
-    private String serverDIR = "./Server";
+    private String serverDIR = "Server";
+    private String parentDIR = "";
     private String currentDIR = "/";
 
     public ClientHandler(Socket clientSocket) {
@@ -64,21 +69,60 @@ public class ClientHandler implements Runnable {
                         writer.println("257 \"" + currentDIR + "\" is the current directory");
                         break;
                     case "CWD":
-                        writer.println("250 Directory successfully changed");
+                        if(checkDIRExist(serverDIR + currentDIR + parts[1])) {
+                            parentDIR = currentDIR;
+                            currentDIR += parts[1] + "/";
+                            writer.println("250 Directory successfully changed");
+                        }
+                        else
+                            writer.println("550 Directory not found");
                         break;
                     case "CDUP":
-                        writer.println("200 Command okay");
+                        if (parentDIR.length() == 0) {
+                            // If already at the root server directory, cannot move further up
+                            writer.println("550 Cannot change to parent directory");
+                        } else {
+                            // Update current directory to parent directory
+                            currentDIR = parentDIR;
+                            // Update parent directory to the parent directory of the new current directory
+                            parentDIR = getParentDirectory(parentDIR);
+                    
+                            // Send success response to the client
+                            writer.println("200 CDUP command successful");
+                        }
                         break;
                     case "MKD":
-                        writer.println("257 Directory created successfully");
+                        // Create a File object representing the new directory
+                        File newDirectory = new File(serverDIR + currentDIR + parts[1]);
+
+                        // Attempt to create the directory
+                        boolean created = newDirectory.mkdir();
+
+                        // Send response to the client based on the success of the operation
+                        if (created) {
+                            writer.println("257 \"" + currentDIR + parts[1] + "\" created successfully");
+                        } else {
+                            writer.println("550 Failed to create directory");
+                        }
                         break;
                     case "RMD":
-                        writer.println("250 Directory deleted successfully");
+                        // Create a File object representing the directory to be removed
+                        File directoryToRemove = new File(serverDIR + currentDIR + parts[1]);
+
+                        // Attempt to delete the directory
+                        boolean deleted = deleteDirectory(directoryToRemove);
+
+                        // Send response to the client based on the success of the operation
+                        if (deleted) {
+                            writer.println("250 Directory \"" + currentDIR + parts[1] + "\" deleted successfully");
+                        } else {
+                            writer.println("550 Failed to delete directory");
+                        }
                         break;
                     case "LIST":
                         writer.println("150 Here comes the directory listing");
-                        // Implement directory listing logic here
-                        // Example: writer.println("File1.txt\r\nFile2.txt");
+                        writer.println("Directory \"" + currentDIR + "\" has: \n");
+                        writer.println(getFileList(serverDIR + currentDIR));
                         writer.println("226 Directory send OK");
                         break;
                     case "RETR":
@@ -154,8 +198,82 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    // generate a random port
     private int getRandomPort() {
         Random random = new Random();
         return random.nextInt(MAX_PASSIVE_PORT - MIN_PASSIVE_PORT + 1) + MIN_PASSIVE_PORT;
     }
+
+    // checks if DIR exists
+    private Boolean checkDIRExist(String directory) {
+        // Get the absolute path of the directory
+        Path directoryPath = Paths.get(directory).toAbsolutePath();
+
+        // Check if the directory exists
+        boolean directoryExists = Files.exists(directoryPath) && Files.isDirectory(directoryPath);
+
+        // If directory exists, update current directory for the client session
+        return directoryExists;
+    }
+
+    // Method to get the parent directory
+    private String getParentDirectory(String directory) {
+        int lastSlashIndex = directory.lastIndexOf('/');
+        directory = directory.substring(0, lastSlashIndex);
+        int secondToLastSlashIndex = directory.lastIndexOf('/');
+
+        if (secondToLastSlashIndex == -1) {
+            // If there is no parent directory, return ""
+            return "";
+        } else {
+            // Return the substring before the last slash
+            return directory.substring(0, secondToLastSlashIndex + 1);
+        }
+    }
+
+    // Method to recursively delete a directory
+    private boolean deleteDirectory(File directory) {
+        if (!directory.exists() || !directory.isDirectory()) {
+            return false;
+        }
+
+        // Get list of files and subdirectories in the directory
+        File[] files = directory.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    // Recursively delete subdirectory
+                    deleteDirectory(file);
+                } else {
+                    // Delete file
+                    file.delete();
+                }
+            }
+        }
+
+        // Delete the empty directory
+        return directory.delete();
+    }
+
+    // Method to handle LIST command and return string representation of files
+    private String getFileList(String currentDirectory) {
+        StringBuilder fileListBuilder = new StringBuilder();
+        File directory = new File(currentDirectory);
+        File[] files = directory.listFiles();
+
+        if (files != null) {
+            for (File file : files) {
+                if (file.isFile()) {
+                    // Append file name to the string
+                    fileListBuilder.append(file.getName()).append("\r\n");
+                } else if (file.isDirectory()) {
+                    // Append directory name with trailing slash to the string
+                    fileListBuilder.append(file.getName()).append("/\r\n");
+                }
+            }
+        }
+
+        return fileListBuilder.toString();
+    }
+
 }
