@@ -1,7 +1,11 @@
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
@@ -20,6 +24,7 @@ public class ClientHandler implements Runnable {
     private String serverDIR = "Server";
     private String parentDIR = "";
     private String currentDIR = "/";
+    private User currentUser = null;
 
     public ClientHandler(Socket clientSocket) {
         this.clientSocket = clientSocket;
@@ -36,7 +41,6 @@ public class ClientHandler implements Runnable {
         try {
             writer.println("220 Welcome to NSCOM01 FTP server");
 
-            User currentUser = null;
             String username = "";
 
             // Handle client commands
@@ -47,18 +51,57 @@ public class ClientHandler implements Runnable {
 
                 switch (command) {
                     case "USER":
-                        username = parts.length > 1 ? parts[1] : "";
-                        writer.println("331 User name okay, need password");
+                        if (parts.length == 2) {
+                            username = parts[1];
+                            writer.println("331 User name okay, need password");
+                        } else {
+                            writer.println("501 Syntax error in parameters or arguments");  // Send a response indicating that the USER command syntax is incorrect
+                        }
                         break;
                     case "PASS":
-                        String password = parts.length > 1 ? parts[1] : "";
+                        if (parts.length != 2) {
+                            writer.println("501 Syntax error in parameters or arguments");  // Send a response indicating that the USER command syntax is incorrect
+                            break;
+                        }
+
+                        String password = parts[1];
                         currentUser = FTPServer.authenticateUser(username, password);
                         if (currentUser != null) {
                             writer.println("230 User logged in, proceed");
+                            // handle other FTP commands
+                            handleFTPCommands();
                         } else {
                             writer.println("530 Not logged in");
                         }
                         break;
+                    case "QUIT":
+                        writer.println("221 Goodbye.");
+                        break;
+                    default:
+                        writer.println("550 Requested action not taken");
+                        break;
+                    
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                clientSocket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void handleFTPCommands() {
+        try {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(" ");
+                String command = parts[0].toUpperCase();
+    
+                switch (command) {
                     case "PASV":
                         handlePasvCommand();
                         break;
@@ -126,9 +169,11 @@ public class ClientHandler implements Runnable {
                         writer.println("226 Directory send OK");
                         break;
                     case "RETR":
-                        writer.println("150 Opening data connection");
-                        // Implement file retrieval logic here
-                        writer.println("226 Transfer complete");
+                        if (parts.length < 2) {
+                            writer.println("501 Syntax error in parameters or arguments");
+                        } else {
+                            handleRetrCommand(currentDIR + parts[1]);
+                        }
                         break;
                     case "DELE":
                         writer.println("250 File deleted successfully");
@@ -143,12 +188,18 @@ public class ClientHandler implements Runnable {
                         // Implement help message here
                         break;
                     case "TYPE":
-                        writer.println("200 Type set to");
-                        // Implement type setting logic here
+                        if (parts.length < 2) {
+                            writer.println("501 Syntax error in parameters or arguments");
+                        } else {
+                            handleTypeCommand(parts[1]);
+                        }
                         break;
                     case "MODE":
-                        writer.println("200 Mode set to");
-                        // Implement mode setting logic here
+                        if (parts.length < 2) {
+                            writer.println("501 Syntax error in parameters or arguments");
+                        } else {
+                            handleModeCommand(parts[1]);
+                        }
                         break;
                     case "STRU":
                         writer.println("200 Structure set to");
@@ -161,12 +212,6 @@ public class ClientHandler implements Runnable {
             }
         } catch (IOException e) {
             e.printStackTrace();
-        } finally {
-            try {
-                clientSocket.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
@@ -187,16 +232,68 @@ public class ClientHandler implements Runnable {
             // Accept incoming data connection
             Socket dataSocket = serverSocket.accept();
 
-            // Handle data transfer over the dataSocket
-            // Implement your data transfer logic here
-
             // Close the dataSocket and serverSocket
-            dataSocket.close();
-            serverSocket.close();
+            // dataSocket.close();
+            // serverSocket.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
+
+    // RETR command
+    private void handleRetrCommand(String filename) {
+        try {
+            File file = new File(serverDIR + filename);
+            if (file.exists() && file.isFile()) {
+                writer.println("150 File status okay; about to open data connection");
+                try (FileInputStream fileInputStream = new FileInputStream(file);
+                     BufferedInputStream bufferedInputStream = new BufferedInputStream(fileInputStream);
+                     OutputStream outputStream = new DataOutputStream(clientSocket.getOutputStream())) {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                }
+            } else {
+                writer.println("550 File not found or cannot be accessed");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // MODE command
+    private void handleModeCommand(String mode) {
+        switch (mode) {
+            case "S":
+                // Set transfer mode to Stream (default mode)
+                writer.println("200 Transfer mode set to Stream");
+                break;
+            case "B":
+                // Set transfer mode to Block
+                writer.println("200 Transfer mode set to Block");
+                break;
+            case "C":
+                // Set transfer mode to Compressed
+                writer.println("200 Transfer mode set to Compressed");
+                break;
+            default:
+                writer.println("504 Command not implemented for that parameter");
+                break;
+        }
+    }
+
+    // TYPE command
+    private void handleTypeCommand(String type) {
+        if (type.equals("A") || type.equals("I")) {
+            // Set the data transfer type accordingly (ASCII or Binary)
+            writer.println("200 Type set to " + type);
+        } else {
+            writer.println("504 Command not implemented for that parameter");
+        }
+    }
+
 
     // generate a random port
     private int getRandomPort() {
