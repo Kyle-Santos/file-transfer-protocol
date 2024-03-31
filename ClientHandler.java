@@ -10,6 +10,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -26,6 +27,15 @@ public class ClientHandler implements Runnable {
     private String currentDIR = "/";
     private User currentUser = null;
 
+    Boolean isPASV = false;
+    String mode = "S";
+    String type = "A";
+    String structure = "F";
+
+    // data connection
+    Socket dataSocket;
+    ServerSocket serverSocket;
+
     public ClientHandler(Socket clientSocket) {
         this.clientSocket = clientSocket;
         try {
@@ -39,7 +49,7 @@ public class ClientHandler implements Runnable {
     @Override
     public void run() {
         try {
-            writer.println("220 Welcome to NSCOM01 FTP server");
+            writer.printf("220 Welcome to NSCOM01 FTP server\r\n");
 
             String username = "";
 
@@ -53,32 +63,32 @@ public class ClientHandler implements Runnable {
                     case "USER":
                         if (parts.length == 2) {
                             username = parts[1];
-                            writer.println("331 User name okay, need password");
+                            writer.printf("331 User name okay, need password\r\n");
                         } else {
-                            writer.println("501 Syntax error in parameters or arguments");  // Send a response indicating that the USER command syntax is incorrect
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");  // Send a response indicating that the USER command syntax is incorrect
                         }
                         break;
                     case "PASS":
                         if (parts.length != 2) {
-                            writer.println("501 Syntax error in parameters or arguments");  // Send a response indicating that the USER command syntax is incorrect
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");  // Send a response indicating that the USER command syntax is incorrect
                             break;
                         }
 
                         String password = parts[1];
                         currentUser = FTPServer.authenticateUser(username, password);
                         if (currentUser != null) {
-                            writer.println("230 User logged in, proceed");
+                            writer.printf("230 User logged in, proceed\r\n");
                             // handle other FTP commands
                             handleFTPCommands();
                         } else {
-                            writer.println("530 Not logged in");
+                            writer.printf("530 Not logged in\r\n");
                         }
                         break;
                     case "QUIT":
-                        writer.println("221 Goodbye.");
+                        writer.printf("221 Goodbye.\r\n");
                         break;
                     default:
-                        writer.println("550 Requested action not taken");
+                        writer.printf("503 Bad sequence of commands\r\n");
                         break;
                     
                 }
@@ -100,30 +110,35 @@ public class ClientHandler implements Runnable {
             while ((line = reader.readLine()) != null) {
                 String[] parts = line.split(" ");
                 String command = parts[0].toUpperCase();
+
+                if (!isPASV && (command.equals("STOR") || command.equals("RETR"))) {
+                    writer.printf("503 Bad sequence of commands\r\n");
+                    continue;
+                }
     
                 switch (command) {
                     case "PASV":
                         handlePasvCommand();
                         break;
                     case "QUIT":
-                        writer.println("221 Goodbye.");
+                        writer.printf("221 Goodbye.\r\n");
                         break;
                     case "PWD":
-                        writer.println("257 \"" + currentDIR + "\" is the current directory");
+                        writer.printf("257 \"" + currentDIR + "\" is the current directory\r\n");
                         break;
                     case "CWD":
                         if(checkDIRExist(serverDIR + currentDIR + parts[1])) {
                             parentDIR = currentDIR;
                             currentDIR += parts[1] + "/";
-                            writer.println("250 Directory successfully changed");
+                            writer.printf("250 Directory successfully changed\r\n");
                         }
                         else
-                            writer.println("550 Directory not found");
+                            writer.printf("550 Directory not found\r\n");
                         break;
                     case "CDUP":
                         if (parentDIR.length() == 0) {
                             // If already at the root server directory, cannot move further up
-                            writer.println("550 Cannot change to parent directory");
+                            writer.printf("550 Cannot change to parent directory\r\n");
                         } else {
                             // Update current directory to parent directory
                             currentDIR = parentDIR;
@@ -131,7 +146,7 @@ public class ClientHandler implements Runnable {
                             parentDIR = getParentDirectory(parentDIR);
                     
                             // Send success response to the client
-                            writer.println("200 CDUP command successful");
+                            writer.printf("200 CDUP command successful\r\n");
                         }
                         break;
                     case "MKD":
@@ -143,9 +158,9 @@ public class ClientHandler implements Runnable {
 
                         // Send response to the client based on the success of the operation
                         if (created) {
-                            writer.println("257 \"" + currentDIR + parts[1] + "\" created successfully");
+                            writer.printf("257 \"" + currentDIR + parts[1] + "\" created successfully\r\n");
                         } else {
-                            writer.println("550 Failed to create directory");
+                            writer.printf("550 Failed to create directory\r\n");
                         }
                         break;
                     case "RMD":
@@ -157,56 +172,75 @@ public class ClientHandler implements Runnable {
 
                         // Send response to the client based on the success of the operation
                         if (deleted) {
-                            writer.println("250 Directory \"" + currentDIR + parts[1] + "\" deleted successfully");
+                            writer.printf("250 Directory \"" + currentDIR + parts[1] + "\" deleted successfully\r\n");
                         } else {
-                            writer.println("550 Failed to delete directory");
+                            writer.printf("550 Failed to delete directory\r\n");
                         }
                         break;
                     case "LIST":
-                        writer.println("150 Here comes the directory listing");
-                        writer.println("Directory \"" + currentDIR + "\" has: \n");
-                        writer.println(getFileList(serverDIR + currentDIR));
-                        writer.println("226 Directory send OK");
+                        writer.printf(getFileList(serverDIR + currentDIR));
                         break;
                     case "RETR":
                         if (parts.length < 2) {
-                            writer.println("501 Syntax error in parameters or arguments");
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
                         } else {
                             handleRetrCommand(currentDIR + parts[1]);
                         }
                         break;
                     case "DELE":
-                        writer.println("250 File deleted successfully");
+                        writer.printf("250 File deleted successfully\r\n");
                         break;
                     case "STOR":
-                        writer.println("150 Opening data connection");
+                        writer.printf("150 Opening data connection\r\n");
                         // Implement file storage logic here
-                        writer.println("226 Transfer complete");
+                        writer.printf("226 Transfer complete\r\n");
                         break;
                     case "HELP":
-                        writer.println("214 Help message");
-                        // Implement help message here
+                        // Send a response containing detailed help information for each command
+                        writer.printf("214 The following commands are recognized:\n" +
+                                        "USER [user]       - Specify user for authentication\n" +
+                                        "PASS [pass]       - Specify password for authentication\n" +
+                                        "PWD               - Print working directory\n" +
+                                        "CWD [dir]         - Change working directory\n" +
+                                        "CDUP              - Change to the parent directory\n" +
+                                        "MKD [dir]         - Make directory\n" +
+                                        "RMD [dir]         - Remove directory\n" +
+                                        "PASV              - Enter passive mode for data transfer\n" +
+                                        "LIST              - List files in the current directory\n" +
+                                        "RETR [file name]  - Retrieve a file from the server\n" +
+                                        "DELE [file name]  - Delete a file\n" +
+                                        "STOR [file name]  - Store a file on the server\n" +
+                                        "HELP              - Display available commands and their descriptions\n" +
+                                        "TYPE [A or I]     - Set transfer mode (ASCII or binary)\n" +
+                                        "MODE [S, B, or C] - Set transfer mode (Stream, Block, or Compressed)\n" +
+                                        "STRU [F, R, or P] - Set file transfer structure (File, Record, or Page)\n" +
+                                        "QUIT              - Terminate the FTP session\n\n" +
+                                        "214 Help OK\r\n");
+        
                         break;
                     case "TYPE":
                         if (parts.length < 2) {
-                            writer.println("501 Syntax error in parameters or arguments");
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
                         } else {
                             handleTypeCommand(parts[1]);
                         }
                         break;
                     case "MODE":
                         if (parts.length < 2) {
-                            writer.println("501 Syntax error in parameters or arguments");
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
                         } else {
                             handleModeCommand(parts[1]);
                         }
                         break;
                     case "STRU":
-                        writer.println("200 Structure set to");
-                        // Implement structure setting logic here
+                        if (parts.length < 2) {
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
+                        } else {
+                            handleSTRUCommand(parts[1]);
+                        }
                         break;
                     default:
-                        writer.println("550 Requested action not taken");
+                        writer.printf("550 Requested action not taken\r\n");
                         break;
                 }
             }
@@ -219,22 +253,20 @@ public class ClientHandler implements Runnable {
         try {
             // Generate a random port for passive mode
             int passivePort = getRandomPort();
-            ServerSocket serverSocket = new ServerSocket(passivePort);
+            serverSocket = new ServerSocket(passivePort);
 
             // Get server's IP address
             String ipAddress = clientSocket.getLocalAddress().getHostAddress().replace(".", ",");
 
             // Inform the client about the passive mode setup
-            writer.println("227 Entering Passive Mode (" + ipAddress + "," + (passivePort / 256) + ","
-                    + (passivePort % 256) + ")");
-            writer.flush();
+            writer.printf("227 Entering Passive Mode (" + ipAddress + "," + (passivePort / 256) + ","
+                    + (passivePort % 256) + ")\r\n");
+            
+            isPASV = true;
 
             // Accept incoming data connection
-            Socket dataSocket = serverSocket.accept();
+            dataSocket = serverSocket.accept();
 
-            // Close the dataSocket and serverSocket
-            // dataSocket.close();
-            // serverSocket.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -245,18 +277,28 @@ public class ClientHandler implements Runnable {
         try {
             File file = new File(serverDIR + filename);
             if (file.exists() && file.isFile()) {
-                writer.println("150 File status okay; about to open data connection");
+                writer.printf("150 File status okay; about to open data connection\r\n");
                 try (FileInputStream fileInputStream = new FileInputStream(file);
                      BufferedInputStream bufferedInputStream = new BufferedInputStream(fileInputStream);
-                     OutputStream outputStream = new DataOutputStream(clientSocket.getOutputStream())) {
+                     OutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
                     byte[] buffer = new byte[8192];
                     int bytesRead;
                     while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, bytesRead);
+                        if (type.equals("A")) 
+                            // Write file contents line by line to the data connection output stream
+                            outputStream.write((bytesRead + "\r\n").getBytes(StandardCharsets.US_ASCII));
+                        else 
+                            outputStream.write(buffer, 0, bytesRead);
                     }
                 }
+                writer.printf("226 Closing data connection; transfer complete\r\n");
+                isPASV = false;
+
+                // Close the dataSocket and serverSocket
+                // dataSocket.close();
+                // serverSocket.close();
             } else {
-                writer.println("550 File not found or cannot be accessed");
+                writer.printf("550 File not found or cannot be accessed\r\n");
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -268,32 +310,64 @@ public class ClientHandler implements Runnable {
         switch (mode) {
             case "S":
                 // Set transfer mode to Stream (default mode)
-                writer.println("200 Transfer mode set to Stream");
+                writer.printf("200 Transfer mode set to Stream\r\n");
+                mode = "S";
                 break;
             case "B":
                 // Set transfer mode to Block
-                writer.println("200 Transfer mode set to Block");
+                writer.printf("200 Transfer mode set to Block\r\n");
+                mode = "B";
                 break;
             case "C":
                 // Set transfer mode to Compressed
-                writer.println("200 Transfer mode set to Compressed");
+                writer.printf("200 Transfer mode set to Compressed\r\n");
+                mode = "C";
                 break;
             default:
-                writer.println("504 Command not implemented for that parameter");
+                writer.printf("504 Command not implemented for that parameter\r\n");
                 break;
         }
     }
 
     // TYPE command
     private void handleTypeCommand(String type) {
-        if (type.equals("A") || type.equals("I")) {
-            // Set the data transfer type accordingly (ASCII or Binary)
-            writer.println("200 Type set to " + type);
-        } else {
-            writer.println("504 Command not implemented for that parameter");
+        if (type.equals("A")) {
+            // Set the data transfer type accordingly (ASCII)
+            writer.printf("200 Type set to A\r\n");
+            type = "A";
+        }
+        if (type.equals("I")) {
+            // Set the data transfer type accordingly (BINARY)
+            writer.printf("200 Type set to I\r\n");
+            type = "I";
+        }
+        else {
+            writer.printf("504 Command not implemented for that parameter\r\n");
         }
     }
 
+    // STRU command
+    private void handleSTRUCommand(String structure) {
+        // Handle different structure types
+        switch (structure) {
+            case "F": // File structure
+                writer.printf("200 File structure selected\r\n");
+                structure = "F";
+                break;
+            case "R": // Record structure
+                writer.printf("200 Record structure selected\r\n");
+                structure = "R";
+                break;
+            case "P": // Page structure
+                writer.printf("200 Page structure selected\r\n");
+                structure = "P";
+                break;
+            default:
+                // Invalid structure code
+                writer.printf("504 Command not implemented for that parameter\r\n");
+                break;
+        }
+    }
 
     // generate a random port
     private int getRandomPort() {
@@ -358,17 +432,21 @@ public class ClientHandler implements Runnable {
         File directory = new File(currentDirectory);
         File[] files = directory.listFiles();
 
+        fileListBuilder.append("150 Here comes the directory listing\n");
+        fileListBuilder.append("Directory \"" + currentDIR + "\" has: \n\n");
+
         if (files != null) {
             for (File file : files) {
                 if (file.isFile()) {
                     // Append file name to the string
-                    fileListBuilder.append(file.getName()).append("\r\n");
+                    fileListBuilder.append(file.getName()).append("\n");
                 } else if (file.isDirectory()) {
                     // Append directory name with trailing slash to the string
-                    fileListBuilder.append(file.getName()).append("/\r\n");
+                    fileListBuilder.append(file.getName()).append("\n");
                 }
             }
         }
+        fileListBuilder.append("\n226 Directory send OK\r\n");
 
         return fileListBuilder.toString();
     }

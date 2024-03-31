@@ -24,9 +24,6 @@ public class FTPClient {
             String response = "";
             String input;
             String command;
-            String mode = "S";
-            String type = "A";
-            Boolean isPASV = false;
 
             Socket dataSocket = null;
             InputStream dataInputStream = null;
@@ -36,27 +33,19 @@ public class FTPClient {
                 input = consoleReader.readLine();
                 command = input.split(" ")[0].toUpperCase();
 
-                if (!isPASV && (command.equals("RETR") || command.equals("STOR"))) {
-                    System.out.println("Passive mode (PASV) is required to establish a data connection before issuing RETR or STOR commands.");
-                    continue;
-                }
-
                 writer.println(input);
+                
                 response = reader.readLine();
                 System.out.println(response);
 
                 // HANDLE RETR
                 if (input.toUpperCase().startsWith("RETR") && response.startsWith("150")) {
                     receiveFileData(dataInputStream, clientDIR + input.split(" ")[1]);
+                    System.out.println(reader.readLine());
                     dataSocket.close();
-                    isPASV = false;
                 } 
-                // HANDLE STOR
-                else if (command.equals("STOR")) {
-                    // Perform file upload
-                }
-                // If response starts with "150", it's a multi-line response (LIST)
-                else if (response.startsWith("150")) {
+                // HADNLE multi-line response (LIST & HELP)
+                else if (response.startsWith("150") || response.startsWith("214")) {
                     // Read all lines of the multi-line response until the final response code (226)
                     String line;
                     System.out.println();
@@ -65,14 +54,11 @@ public class FTPClient {
                     }
                     System.out.println(line); // Print the final response line
                 }
-                // HANDLE MODE
-                else if (command.equals("MODE") && response.startsWith("200")) {
-                    mode = input.split(" ")[1];
+                // HANDLE STOR
+                else if (command.equals("STOR")) {
+                    // Perform file upload
                 }
-                // HANDLE TYPE
-                else if (command.equals("TYPE") && response.startsWith("200")) {
-                    type = input.split(" ")[1];
-                }
+                // HANDLE PASV
                 else if (command.equals("PASV")) {
                     // Find the index of the opening parenthesis '(' and closing parenthesis ')'
                     int startIndex = response.indexOf('(');
@@ -93,8 +79,6 @@ public class FTPClient {
                     // Establish data connection
                     dataSocket = new Socket(ipAddress, dataPort);
                     dataInputStream = dataSocket.getInputStream();
-
-                    isPASV = true;
                 }
 
             } while (!response.contains("221"));
@@ -106,18 +90,13 @@ public class FTPClient {
         }
     }
 
-    private static void messageClient(String msg) {
-        System.out.println(msg);
-      }
-
-      private static void receiveFileData(InputStream dataInputStream, String filename) throws IOException {
+    private static void receiveFileData(InputStream dataInputStream, String filename) throws IOException {
         try (BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream(filename))) {
             byte[] buffer = new byte[8192];
             int bytesRead;
             while ((bytesRead = dataInputStream.read(buffer)) != -1) {
                 outputStream.write(buffer, 0, bytesRead);
             }
-            System.out.println("226 Closing data connection; transfer complete");
         } finally {
             // Close the dataInputStream after data transfer completes or in case of error
             if (dataInputStream != null) {
