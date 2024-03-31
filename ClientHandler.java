@@ -28,9 +28,9 @@ public class ClientHandler implements Runnable {
     private User currentUser = null;
 
     Boolean isPASV = false;
-    String mode = "S";
-    String type = "A";
-    String structure = "F";
+    String mode = "";
+    String type = "";
+    String structure = "";
 
     // data connection
     Socket dataSocket;

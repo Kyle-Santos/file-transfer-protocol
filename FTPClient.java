@@ -27,7 +27,7 @@ public class FTPClient {
 
             Socket dataSocket = null;
             InputStream dataInputStream = null;
-
+            
             do {
                 System.out.print("\nCOMMAND: ");
                 input = consoleReader.readLine();
@@ -79,6 +79,16 @@ public class FTPClient {
                     // Establish data connection
                     dataSocket = new Socket(ipAddress, dataPort);
                     dataInputStream = dataSocket.getInputStream();
+                }
+                else if (response.startsWith("230")) {
+                    writer.println("TYPE I");
+                    System.out.println(reader.readLine());
+
+                    writer.println("MODE S");
+                    System.out.println(reader.readLine());
+
+                    writer.println("STRU F");
+                    System.out.println(reader.readLine());
                 }
 
             } while (!response.contains("221"));
