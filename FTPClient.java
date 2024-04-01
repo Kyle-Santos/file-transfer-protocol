@@ -1,12 +1,14 @@
-import java.io.BufferedOutputStream;
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.zip.GZIPInputStream;
 
 public class FTPClient {
     public static void main(String[] args) {
@@ -24,9 +26,10 @@ public class FTPClient {
             String response = "";
             String input;
             String command;
+            String mode = null, type = null, stru = null;
 
             Socket dataSocket = null;
-            InputStream dataInputStream = null;
+            // InputStream dataInputStream = null;
             
             do {
                 System.out.print("\nCOMMAND: ");
@@ -40,7 +43,7 @@ public class FTPClient {
 
                 // HANDLE RETR
                 if (input.toUpperCase().startsWith("RETR") && response.startsWith("150")) {
-                    receiveFileData(dataInputStream, clientDIR + input.split(" ")[1]);
+                    receiveFileData(dataSocket, clientDIR + input.split(" ")[1], mode, type);
                     System.out.println(reader.readLine());
                     dataSocket.close();
                 } 
@@ -78,18 +81,32 @@ public class FTPClient {
 
                     // Establish data connection
                     dataSocket = new Socket(ipAddress, dataPort);
-                    dataInputStream = dataSocket.getInputStream();
+                    // dataInputStream = dataSocket.getInputStream();
                 }
                 else if (response.startsWith("230")) {
                     writer.println("TYPE I");
-                    System.out.println(reader.readLine());
+                    System.out.println("\n" + reader.readLine());
 
-                    writer.println("MODE S");
-                    System.out.println(reader.readLine());
+                    writer.println("MODE B");
+                    System.out.println("\n" + reader.readLine());
 
                     writer.println("STRU F");
-                    System.out.println(reader.readLine());
+                    System.out.println("\n" + reader.readLine());
+
+                    mode = "B";
+                    type = "I";
+                    stru = "F";
                 }
+                else if (response.startsWith("200") && command.equals("MODE")) {
+                    mode = input.split(" ")[1].toUpperCase();
+                }
+                else if (response.startsWith("200") && command.equals("TYPE")) {
+                    type = input.split(" ")[1].toUpperCase();
+                }
+                else if (response.startsWith("200") && command.equals("STRU")) {
+                    stru = input.split(" ")[1].toUpperCase();
+                }
+
 
             } while (!response.contains("221"));
 
@@ -100,17 +117,77 @@ public class FTPClient {
         }
     }
 
-    private static void receiveFileData(InputStream dataInputStream, String filename) throws IOException {
-        try (BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream(filename))) {
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = dataInputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-        } finally {
-            // Close the dataInputStream after data transfer completes or in case of error
-            if (dataInputStream != null) {
+    private static void receiveFileData(Socket dataSocket, String filename, String mode, String type) throws IOException {
+        if (type.equals("I")) {
+            try (InputStream dataInputStream = new BufferedInputStream(dataSocket.getInputStream());
+                FileOutputStream outputStream = new FileOutputStream(filename)) {
+                int bufferSize = 8192;
+                byte[] buffer = new byte[bufferSize];
+                int bytesRead;
+                switch (mode) {
+                    case "S":
+                        buffer = new byte[bufferSize];   
+                        while ((bytesRead = dataInputStream.read(buffer)) != -1) {
+                            outputStream.write(buffer, 0, bytesRead);
+                            outputStream.flush();
+                        }
+                        break;      
+                    case "B":
+                        buffer = new byte[bufferSize + 3];
+                        while ((bytesRead = dataInputStream.read(buffer)) != -1) {
+                            int dataSize = (buffer[1] << 8) | (buffer[2] & 0xFF); // Retrieving size from the 2-byte header
+
+                            if (dataSize <= 0) {
+                                System.out.println("451: Requested action aborted. Local error in processing.");
+                                break;
+                            }
+
+                            System.out.println(buffer[0] + " " + buffer[1] + " " + buffer[2] + " " + dataSize);
+                            outputStream.write(buffer, 3, dataSize); // Skipping the header bytes
+                        }
+                        dataInputStream.close();
+                        outputStream.close();
+                        break;
+
+                    case "C":
+                        try (GZIPInputStream gzipInputStream = new GZIPInputStream(dataInputStream)) {
+                            while ((bytesRead = gzipInputStream.read(buffer)) != -1) {
+                                outputStream.write(buffer, 0, bytesRead);
+                            }
+                        }
+                        break;
+                
+                    default:
+                        break;
+                }
+                // Close the dataInputStream after data transfer completes or in case of error
                 dataInputStream.close();
+                outputStream.close();
+            }
+        } else {
+            try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(dataSocket.getInputStream()));
+                PrintWriter fileWriter = new PrintWriter(new FileWriter(filename))) {
+                
+                switch (mode) {
+                    case "S":
+                        String line;
+                        while ((line = bufferedReader.readLine()) != null) {
+                            fileWriter.println(line);
+                        }
+                        break;
+                    
+                    case "B":
+                        
+                        break;
+
+                    case "C":
+                        
+                        break;
+                
+                    default:
+                        break;
+                }
+                bufferedReader.close();
             }
         }
     }

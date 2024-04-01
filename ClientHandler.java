@@ -1,8 +1,10 @@
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -15,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Random;
+import java.util.zip.GZIPOutputStream;
 
 public class ClientHandler implements Runnable {
     private Socket clientSocket;
@@ -30,7 +33,7 @@ public class ClientHandler implements Runnable {
     Boolean isPASV = false;
     String mode = "";
     String type = "";
-    String structure = "";
+    String stru = "";
 
     // data connection
     Socket dataSocket;
@@ -181,11 +184,10 @@ public class ClientHandler implements Runnable {
                         writer.printf(getFileList(serverDIR + currentDIR));
                         break;
                     case "RETR":
-                        if (parts.length < 2) {
+                        if (parts.length < 2)
                             writer.printf("501 Syntax error in parameters or arguments\r\n");
-                        } else {
+                        else 
                             handleRetrCommand(currentDIR + parts[1]);
-                        }
                         break;
                     case "DELE":
                         writer.printf("250 File deleted successfully\r\n");
@@ -274,40 +276,102 @@ public class ClientHandler implements Runnable {
 
     // RETR command
     private void handleRetrCommand(String filename) {
-        try {
-            File file = new File(serverDIR + filename);
-            if (file.exists() && file.isFile()) {
-                writer.printf("150 File status okay; about to open data connection\r\n");
-                try (FileInputStream fileInputStream = new FileInputStream(file);
-                     BufferedInputStream bufferedInputStream = new BufferedInputStream(fileInputStream);
-                     OutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
-                        if (type.equals("A")) 
-                            // Write file contents line by line to the data connection output stream
-                            outputStream.write((bytesRead + "\r\n").getBytes(StandardCharsets.US_ASCII));
-                        else 
-                            outputStream.write(buffer, 0, bytesRead);
-                    }
-                }
-                writer.printf("226 Closing data connection; transfer complete\r\n");
-                isPASV = false;
-
-                // Close the dataSocket and serverSocket
-                // dataSocket.close();
-                // serverSocket.close();
-            } else {
-                writer.printf("550 File not found or cannot be accessed\r\n");
+        File file = new File(serverDIR + filename);
+        if (file.exists() && file.isFile()) {
+            writer.printf("150 File status okay; about to open data connection\r\n");
+            switch (mode) {
+                case "S":
+                    streamRETR(file);
+                    break;
+                case "B":
+                    blockRETR(file);
+                    break;
+                case "C":
+                    compressedRETR(file);
+                    break;
             }
+
+            writer.printf("226 Closing data connection; transfer complete\r\n");
+            isPASV = false;
+
+            // Close the dataSocket and serverSocket
+            // dataSocket.close();
+            // serverSocket.close();
+        } else {
+            writer.printf("550 File not found or cannot be accessed\r\n");
+        }
+
+    }
+    
+    private void streamRETR(File file) {
+        if (type.equals("I")) {
+            try (FileInputStream fileInputStream = new FileInputStream(file);
+                BufferedInputStream bufferedInputStream = new BufferedInputStream(fileInputStream);
+                OutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
+                    // Write file contents line by line to the data connection output stream
+                    outputStream.write(buffer, 0, bytesRead);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        else {
+            try (BufferedReader bufferedReader = new BufferedReader(new FileReader(file));
+                PrintWriter outputStream = new PrintWriter(dataSocket.getOutputStream(), true)) {
+                String s;
+                while ((s = bufferedReader.readLine()) != null) {
+                    outputStream.println(s);
+                }
+                bufferedReader.close();
+                outputStream.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void blockRETR(File file) {
+        try (FileInputStream fileInputStream = new FileInputStream(file);
+            DataOutputStream outputStream = new DataOutputStream(new BufferedOutputStream(dataSocket.getOutputStream()))) {
+            
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = fileInputStream.read(buffer)) != -1) {
+                // Send block header (description byte + size)
+                outputStream.writeByte(1); // Description byte
+                outputStream.writeShort(bytesRead); // Size
+                
+                // Send block data
+                outputStream.write(buffer, 0, bytesRead);
+            }
+            fileInputStream.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void compressedRETR(File file) {
+        try (FileInputStream fileInputStream = new FileInputStream(file);
+            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(dataSocket.getOutputStream())) {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = fileInputStream.read(buffer)) != -1) {
+                if (type.equals("A")) 
+                    gzipOutputStream.write((bytesRead + "\r\n").getBytes(StandardCharsets.US_ASCII));
+                else
+                    gzipOutputStream.write(buffer, 0, bytesRead);
+            }       
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     // MODE command
-    private void handleModeCommand(String mode) {
-        switch (mode) {
+    private void handleModeCommand(String modeInput) {
+        switch (modeInput) {
             case "S":
                 // Set transfer mode to Stream (default mode)
                 writer.printf("200 Transfer mode set to Stream\r\n");
@@ -330,13 +394,13 @@ public class ClientHandler implements Runnable {
     }
 
     // TYPE command
-    private void handleTypeCommand(String type) {
-        if (type.equals("A")) {
+    private void handleTypeCommand(String typeInput) {
+        if (typeInput.equals("A")) {
             // Set the data transfer type accordingly (ASCII)
             writer.printf("200 Type set to A\r\n");
             type = "A";
         }
-        if (type.equals("I")) {
+        else if (typeInput.equals("I")) {
             // Set the data transfer type accordingly (BINARY)
             writer.printf("200 Type set to I\r\n");
             type = "I";
@@ -352,15 +416,15 @@ public class ClientHandler implements Runnable {
         switch (structure) {
             case "F": // File structure
                 writer.printf("200 File structure selected\r\n");
-                structure = "F";
+                stru = "F";
                 break;
             case "R": // Record structure
                 writer.printf("200 Record structure selected\r\n");
-                structure = "R";
+                stru = "R";
                 break;
             case "P": // Page structure
                 writer.printf("200 Page structure selected\r\n");
-                structure = "P";
+                stru = "P";
                 break;
             default:
                 // Invalid structure code
