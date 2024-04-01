@@ -188,8 +188,9 @@ public class ClientHandler implements Runnable {
                         }
                         break;
                     case "DELE":
-                        writer.printf("250 File deleted successfully\r\n");
+                        handleDelCommand(currentDIR + parts[1]);
                         break;
+                
                     case "STOR":
                         writer.printf("150 Opening data connection\r\n");
                         // Implement file storage logic here
@@ -302,6 +303,29 @@ public class ClientHandler implements Runnable {
             }
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    //DELE command
+    private void handleDelCommand(String filename) {
+        File file = new File(serverDIR + filename);
+        if (file.exists() && file.isFile()) {
+            try {
+                // Attempt to delete the file
+                if (file.delete()) {
+                    // Send a success response to the client
+                    writer.printf("250 File deleted successfully\r\n");
+                } else {
+                    // Send a failure response to the client
+                    writer.printf("550 Failed to delete file\r\n");
+                }
+            } catch (SecurityException e) {
+                // Send a failure response to the client
+                writer.printf("550 Permission denied\r\n");
+            }
+        } else {
+            // Send a "File not found" response to the client
+            writer.printf("550 File not found\r\n");
         }
     }
 
