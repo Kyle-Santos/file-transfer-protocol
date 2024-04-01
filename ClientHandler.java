@@ -4,8 +4,10 @@ import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -194,9 +196,25 @@ public class ClientHandler implements Runnable {
                         break;
                 
                     case "STOR":
-                        writer.printf("150 Opening data connection\r\n");
-                        // Implement file storage logic here
-                        writer.printf("226 Transfer complete\r\n");
+                        if (parts.length < 2) {
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
+                        }
+                        else {
+                            writer.printf("150 Opening data connection\n");
+
+                            // Check if the file already exists
+                            File file = new File(serverDIR + currentDIR + parts[1]);
+
+                            if (file.exists()) {
+                            // If the file exists, return an error message
+                            writer.printf("550 File already exists\r\n");
+                            }
+                            else {
+                            // If the file does not exist, store the file
+                                storeFile(parts[1]);
+                                writer.printf("226 Transfer complete\r\n");
+                            }
+                        }
                         break;
                     case "HELP":
                         // Send a response containing detailed help information for each command
@@ -390,6 +408,28 @@ public class ClientHandler implements Runnable {
         } else {
             // Send a "File not found" response to the client
             writer.printf("550 File not found\r\n");
+        }
+    }
+
+    // STOR command
+    private void storeFile(String filename) {
+        try (
+            InputStream inputStream = dataSocket.getInputStream();
+            OutputStream outputStream = new FileOutputStream(new File(serverDIR + currentDIR + filename));
+        ) {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer))!= -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                dataSocket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
