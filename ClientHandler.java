@@ -282,6 +282,16 @@ public class ClientHandler implements Runnable {
         }
     }
 
+/**
+ * Handles the PASV command by setting up a passive mode data connection.
+ * A random port is generated for passive mode, and the server's IP address along with
+ * the passive port information is sent to the client. Once the passive mode setup
+ * is complete, the method waits for an incoming data connection.
+ * 
+ * @throws IOException if an I/O error occurs while setting up the passive mode
+ *                     or accepting the incoming data connection
+*/
+
     private void handlePasvCommand() {
         try {
             // Generate a random port for passive mode
@@ -304,6 +314,17 @@ public class ClientHandler implements Runnable {
             e.printStackTrace();
         }
     }
+
+/**
+ * Handles the STOR command by receiving data from the client and storing it in a file.
+ * The method creates input and output streams to read data from the dataSocket and write
+ * the received data to the specified file. It supports different transfer modes: "S" (Stream),
+ * "B" (Block), and "C" (Compressed). After receiving the data and storing it in the file,
+ * a success response is sent to the client, and the data connection is closed.
+ * 
+ * @param filename the name of the file to store the received data
+ * @throws IOException if an I/O error occurs while handling the STOR command
+*/
 
     private void handleSTORCommand(String filename) {
         try {
@@ -361,7 +382,20 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // RETR command
+// RETR command
+
+/**
+ * Handles the RETR command by retrieving a file from the server and sending it to the client.
+ * The method checks if the specified file exists and is a regular file. If the file exists,
+ * it sends a status message to the client and opens a data connection for data transfer. If the
+ * transfer mode is "C" (Compressed), the file is sent as a compressed stream using GZIP compression.
+ * Otherwise, the file is sent as-is. The method also supports ASCII mode conversion if the transfer
+ * type is set to "A" (ASCII). After transferring the file, a success response is sent to the client,
+ * and the data connection is closed.
+ *
+ * @param filename the name of the file to retrieve from the server
+*/
+
     private void handleRetrCommand(String filename) {
         File file = new File(serverDIR + currentDIR + filename);
         if (file.exists() && file.isFile()) {
@@ -432,7 +466,19 @@ public class ClientHandler implements Runnable {
 
     }
 
-    //DELE command
+//DELE command
+
+/**
+ * Handles the DELE command by attempting to delete a file from the server.
+ * The method checks if the specified file exists and is a regular file. If the file exists,
+ * it attempts to delete the file. If the deletion is successful, a success response is sent
+ * to the client. If the deletion fails due to permission issues or other reasons, appropriate
+ * failure responses are sent to the client. If the file does not exist, a "File not found"
+ * response is sent to the client.
+ *
+ * @param filename the name of the file to delete from the server
+*/
+
     private void handleDelCommand(String filename) {
         File file = new File(serverDIR + filename);
         if (file.exists() && file.isFile()) {
@@ -455,7 +501,18 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // STOR command
+// STOR command
+
+/**
+ * Stores a file received through the data socket into the server's directory.
+ * The method reads data from the input stream of the data socket and writes it to
+ * a file in the server's directory with the specified filename. It uses a buffer
+ * to handle the data transfer in chunks. After successfully storing the file, the
+ * data socket is closed.
+ *
+ * @param filename the name of the file to store in the server's directory
+*/
+
     private void storeFile(String filename) {
         try (
             InputStream inputStream = dataSocket.getInputStream();
@@ -477,7 +534,19 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // MODE command
+// MODE command
+
+/**
+ * Handles the MODE command by setting the transfer mode for data transfer.
+ * The method takes a mode input parameter and sets the transfer mode accordingly.
+ * Supported modes are "S" (Stream), "B" (Block), and "C" (Compressed). If an
+ * unsupported mode is provided, a "Command not implemented" response is sent
+ * to the client. Upon successful mode setting, a confirmation message is sent
+ * to the client.
+ *
+ * @param modeInput the transfer mode input ("S" for Stream, "B" for Block, "C" for Compressed)
+*/
+
     private void handleModeCommand(String modeInput) {
         switch (modeInput) {
             case "S":
@@ -501,7 +570,18 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // TYPE command
+// TYPE command
+
+/**
+ * Handles the TYPE command by setting the data transfer type for the session.
+ * The method takes a type input parameter and sets the data transfer type accordingly.
+ * Supported types are "A" (ASCII) and "I" (Binary). If an unsupported type is provided,
+ * a "Command not implemented" response is sent to the client. Upon successful type setting,
+ * a confirmation message is sent to the client.
+ *
+ * @param typeInput the data transfer type input ("A" for ASCII, "I" for Binary)
+*/
+
     private void handleTypeCommand(String typeInput) {
         if (typeInput.equals("A")) {
             // Set the data transfer type accordingly (ASCII)
@@ -518,7 +598,19 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // STRU command
+// STRU command
+
+/**
+ * Handles the STRU command by setting the file structure for data transfer.
+ * The method takes a structure parameter and sets the file structure accordingly.
+ * Supported structure types are "F" (File structure), "R" (Record structure), and
+ * "P" (Page structure). If an unsupported structure code is provided, a "Command not
+ * implemented" response is sent to the client. Upon successful structure setting,
+ * a confirmation message is sent to the client.
+ *
+ * @param structure the file structure code input ("F" for File, "R" for Record, "P" for Page)
+*/
+
     private void handleSTRUCommand(String structure) {
         // Handle different structure types
         switch (structure) {
