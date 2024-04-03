@@ -1,3 +1,13 @@
+/**
+ * The ClientHandler class handles communication with an FTP client.
+ * It implements the Runnable interface for concurrent handling of multiple clients.
+ * 
+ * @author Ching, Nicolas Miguel T.
+ * @author Santos, Kyle Adrian L.
+ * @version 1.0
+ * @since April 3, 2024
+*/
+
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
@@ -39,6 +49,12 @@ public class ClientHandler implements Runnable {
     Socket dataSocket;
     ServerSocket serverSocket;
 
+    /**
+     * Constructs a ClientHandler object with the specified client socket.
+     * 
+     * @param clientSocket The client socket
+    */
+
     public ClientHandler(Socket clientSocket) {
         this.clientSocket = clientSocket;
         try {
@@ -48,6 +64,10 @@ public class ClientHandler implements Runnable {
             e.printStackTrace();
         }
     }
+
+    /**
+     * Runs the client handler logic, handling FTP commands from the client.
+    */
 
     @Override
     public void run() {
@@ -111,6 +131,10 @@ public class ClientHandler implements Runnable {
             }
         }
     }
+
+    /**
+     * Handles FTP commands sent by the client.
+    */
 
     private void handleFTPCommands() {
         try {

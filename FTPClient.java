@@ -1,3 +1,15 @@
+/**
+ * FTPClient is a simple FTP client implementation in Java.
+ * It supports basic FTP commands such as RETR, STOR, PASV, MODE, TYPE, STRU, etc.
+ * The client establishes a connection to a specified host and port to communicate with an FTP server.
+ * It can upload and download files using various modes and types.
+ * 
+ * @author Ching, Nicolas Miguel T.
+ * @author Santos, Kyle Adrian L.
+ * @version 1.0
+ * @since April 3, 2024
+ */
+
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
@@ -123,6 +135,16 @@ public class FTPClient {
         }
     }
 
+    /**
+     * Uploads file data to the FTP server using the specified mode and type.
+     * 
+     * @param dataSocket The data socket for the data connection
+     * @param filename The name of the file to upload
+     * @param mode The transfer mode (C for compressed, B for binary, S for stream)
+     * @param type The transfer type (A for ASCII, I for binary)
+     * @throws IOException If an I/O error occurs during file upload
+     */
+
     private static void uploadFileData(Socket dataSocket, String filename, String mode, String type) throws IOException {
         File file = new File(filename);
         if (file.exists() && file.isFile()) {
@@ -188,6 +210,16 @@ public class FTPClient {
             System.out.println("550 File not found or cannot be accessed\r\n");
         }
     }
+
+    /**
+     * Downloads file data from the FTP server using the specified mode and type.
+     * 
+     * @param dataSocket The data socket for the data connection
+     * @param filename The name of the file to download
+     * @param mode The transfer mode (S for stream, B for block, C for compressed)
+     * @param type The transfer type (A for ASCII, I for binary)
+     * @throws IOException If an I/O error occurs during file download
+     */
 
     private static void receiveFileData(Socket dataSocket, String filename, String mode, String type) throws IOException {
         try (InputStream dataInputStream = new BufferedInputStream(dataSocket.getInputStream());
