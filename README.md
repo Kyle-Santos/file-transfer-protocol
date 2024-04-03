@@ -11,9 +11,10 @@ To Compile:
 
 To Run:
 - java FTPServer
-/* Specify IP and Port Number */
+/* Specify IP and Port Number to listen to */
 
 - java FTPClient
+/* Specify Port Number to connect to */
 
 FTPClient Login (Running)
 /* Input Commands in Order */

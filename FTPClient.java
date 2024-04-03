@@ -238,7 +238,7 @@ public class FTPClient {
      * @param stru The data stucture (F for File Structure, R for Record Structure, P for Page Structure)
      * @throws IOException If an I/O error occurs during file download
      */
-
+    
     private static void receiveFileData(Socket dataSocket, String filename, String mode, String type, String stru) throws IOException {
         // handle STRU R & TYPE A
         if (stru.equals("R") && type.equals("A")) {
