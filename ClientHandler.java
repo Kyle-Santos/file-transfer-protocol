@@ -220,7 +220,7 @@ public class ClientHandler implements Runnable {
                                         "DELE [file name]  - Delete a file\n" +
                                         "STOR [file name]  - Store a file on the server\n" +
                                         "HELP              - Display available commands and their descriptions\n" +
-                                        "TYPE [A or I]     - Set transfer mode (ASCII or binary)\n" +
+                                        "TYPE [A or I]     - Set transfer mode (ASCII or Image)\n" +
                                         "MODE [S, B, or C] - Set transfer mode (Stream, Block, or Compressed)\n" +
                                         "STRU [F, R, or P] - Set file transfer structure (File, Record, or Page)\n" +
                                         "QUIT              - Terminate the FTP session\n\n" +
