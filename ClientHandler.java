@@ -1,22 +1,20 @@
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileReader;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Random;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 public class ClientHandler implements Runnable {
@@ -72,6 +70,11 @@ public class ClientHandler implements Runnable {
                         }
                         break;
                     case "PASS":
+                        if (username.equals("")) {
+                            writer.printf("503 Bad sequence of commands\r\n");
+                            break;
+                        }
+                        
                         if (parts.length != 2) {
                             writer.printf("501 Syntax error in parameters or arguments\r\n");  // Send a response indicating that the USER command syntax is incorrect
                             break;
@@ -187,16 +190,17 @@ public class ClientHandler implements Runnable {
                         if (parts.length < 2)
                             writer.printf("501 Syntax error in parameters or arguments\r\n");
                         else 
-                            handleRetrCommand(currentDIR + parts[1]);
+                            handleRetrCommand(parts[1]);
                         break;
                     case "DELE":
                         handleDelCommand(currentDIR + parts[1]);
                         break;
                 
                     case "STOR":
-                        writer.printf("150 Opening data connection\r\n");
-                        // Implement file storage logic here
-                        writer.printf("226 Transfer complete\r\n");
+                        if (parts.length < 2)
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
+                        else 
+                            handleSTORCommand(parts[1]);
                         break;
                     case "HELP":
                         // Send a response containing detailed help information for each command
@@ -275,22 +279,121 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // RETR command
-    private void handleRetrCommand(String filename) {
-        File file = new File(serverDIR + filename);
-        if (file.exists() && file.isFile()) {
-            writer.printf("150 File status okay; about to open data connection\r\n");
+    private void handleSTORCommand(String filename) {
+        try {
+            // Create a BufferedInputStream to read data from the client
+            BufferedInputStream dataInputStream = new BufferedInputStream(dataSocket.getInputStream());
+
+            // Create a FileOutputStream to write the received data to the file
+            FileOutputStream outputStream = new FileOutputStream(serverDIR + currentDIR + filename);
+
+            writer.printf("150 Ready to receive file [" + filename + "].\r\n");
+
+            // Buffer to hold data temporarily
+            int bufferSize = 8192;
+            byte[] buffer = new byte[bufferSize];
+            int bytesRead;
             switch (mode) {
                 case "S":
-                    streamRETR(file);
-                    break;
+                    while ((bytesRead = dataInputStream.read(buffer)) != -1) 
+                        outputStream.write(buffer, 0, bytesRead);
+                    break;      
                 case "B":
-                    blockRETR(file);
+                    buffer = new byte[bufferSize + 3];
+                    while ((bytesRead = dataInputStream.read(buffer)) != -1) {
+                        System.out.println(bytesRead + " " + buffer[0] + " " + buffer[1] + " "+ buffer[2]);
+                        int dataSize = (buffer[1] << 8) | (buffer[2] & 0xFF); // Retrieving size from the 2-byte header
+
+                        if (dataSize <= 0) {
+                            writer.printf("451: Requested action aborted. Local error in processing.");
+                            return;
+                        }
+                        outputStream.write(buffer, 3, dataSize); // Skipping the header bytes
+                    }
                     break;
+
                 case "C":
-                    compressedRETR(file);
+                    try (GZIPInputStream gzipInputStream = new GZIPInputStream(dataInputStream)) {
+                        while ((bytesRead = gzipInputStream.read(buffer)) != -1)
+                            outputStream.write(buffer, 0, bytesRead);
+                        gzipInputStream.close();
+                    }
+                    break;
+            
+                default:
                     break;
             }
+
+            // Send a success response to the client
+            writer.printf("226 Closing data connection; transfer complete\r\n");
+
+            // Close streams
+            outputStream.close();
+            dataInputStream.close();
+            isPASV = false;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // RETR command
+    private void handleRetrCommand(String filename) {
+        File file = new File(serverDIR + currentDIR + filename);
+        if (file.exists() && file.isFile()) {
+            writer.printf("150 File status [" + filename + "] okay; about to open data connection\r\n");
+            if (mode.equals("C")) {
+                try (FileInputStream fileInputStream = new FileInputStream(file);
+                    GZIPOutputStream gzipOutputStream = new GZIPOutputStream(dataSocket.getOutputStream())) {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = fileInputStream.read(buffer)) != -1) {
+                        if (type.equals("A")) {
+                            // Convert each byte to ASCII
+                            System.out.println(buffer[0] + " " + buffer[1] + " " + buffer[2] + " " + bytesRead);
+                            for (int i = 0; i < bytesRead; i++) {
+                                // Convert byte to ASCII representation
+                                buffer[i] = (byte) (buffer[i] & 0x7F);
+                            }
+                            System.out.println(buffer[0] + " " + buffer[1] + " " + buffer[2] + " " + bytesRead);
+                        }
+                            
+                        gzipOutputStream.write(buffer, 0, bytesRead);
+                    }       
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            else {
+                try (FileInputStream fileInputStream = new FileInputStream(file);
+                    BufferedInputStream bufferedInputStream = new BufferedInputStream(fileInputStream);
+                    DataOutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    
+                    while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
+                        if (mode.equals("B")) {
+                            // Send block header (description byte + size)
+                            outputStream.writeByte(1); // Description byte
+                            outputStream.writeShort(bytesRead); // Size
+                        }
+
+                        if (type.equals("A")) {
+                            // Convert each byte to ASCII
+                            System.out.println(buffer[0] + " " + buffer[1] + " " + buffer[2] + " " + bytesRead);
+                            for (int i = 0; i < bytesRead; i++) {
+                                // Convert byte to ASCII representation
+                                buffer[i] = (byte) (buffer[i] & 0x7F);
+                            }
+                            System.out.println(buffer[0] + " " + buffer[1] + " " + buffer[2] + " " + bytesRead);
+                        }
+                        // Write file contents line by line to the data connection output stream
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+
 
             writer.printf("226 Closing data connection; transfer complete\r\n");
             isPASV = false;
@@ -302,72 +405,6 @@ public class ClientHandler implements Runnable {
             writer.printf("550 File not found or cannot be accessed\r\n");
         }
 
-    }
-    
-    private void streamRETR(File file) {
-        if (type.equals("I")) {
-            try (FileInputStream fileInputStream = new FileInputStream(file);
-                BufferedInputStream bufferedInputStream = new BufferedInputStream(fileInputStream);
-                OutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
-                    // Write file contents line by line to the data connection output stream
-                    outputStream.write(buffer, 0, bytesRead);
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        else {
-            try (BufferedReader bufferedReader = new BufferedReader(new FileReader(file));
-                PrintWriter outputStream = new PrintWriter(dataSocket.getOutputStream(), true)) {
-                String s;
-                while ((s = bufferedReader.readLine()) != null) {
-                    outputStream.println(s);
-                }
-                bufferedReader.close();
-                outputStream.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private void blockRETR(File file) {
-        try (FileInputStream fileInputStream = new FileInputStream(file);
-            DataOutputStream outputStream = new DataOutputStream(new BufferedOutputStream(dataSocket.getOutputStream()))) {
-            
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = fileInputStream.read(buffer)) != -1) {
-                // Send block header (description byte + size)
-                outputStream.writeByte(1); // Description byte
-                outputStream.writeShort(bytesRead); // Size
-                
-                // Send block data
-                outputStream.write(buffer, 0, bytesRead);
-            }
-            fileInputStream.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void compressedRETR(File file) {
-        try (FileInputStream fileInputStream = new FileInputStream(file);
-            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(dataSocket.getOutputStream())) {
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = fileInputStream.read(buffer)) != -1) {
-                if (type.equals("A")) 
-                    gzipOutputStream.write((bytesRead + "\r\n").getBytes(StandardCharsets.US_ASCII));
-                else
-                    gzipOutputStream.write(buffer, 0, bytesRead);
-            }       
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     //DELE command
