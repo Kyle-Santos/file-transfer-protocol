@@ -5,7 +5,7 @@
  * @author Ching, Nicolas Miguel T.
  * @author Santos, Kyle Adrian L.
  * @version 1.0
- * @since April 3, 2024
+ * @since March 30, 2024
 */
 
 import java.io.BufferedInputStream;
@@ -15,9 +15,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
@@ -54,7 +52,6 @@ public class ClientHandler implements Runnable {
      * 
      * @param clientSocket The client socket
     */
-
     public ClientHandler(Socket clientSocket) {
         this.clientSocket = clientSocket;
         try {
@@ -135,7 +132,6 @@ public class ClientHandler implements Runnable {
     /**
      * Handles FTP commands sent by the client.
     */
-
     private void handleFTPCommands() {
         try {
             String line;
@@ -230,7 +226,7 @@ public class ClientHandler implements Runnable {
                         break;
                     case "HELP":
                         // Send a response containing detailed help information for each command
-                        writer.printf("214 The following commands are recognized:\n" +
+                        writer.printf(  "214 The following commands are recognized:\n" +
                                         "USER [user]       - Specify user for authentication\n" +
                                         "PASS [pass]       - Specify password for authentication\n" +
                                         "PWD               - Print working directory\n" +
@@ -306,58 +302,85 @@ public class ClientHandler implements Runnable {
     }
 
     private void handleSTORCommand(String filename) {
-        try {
-            // Create a BufferedInputStream to read data from the client
-            BufferedInputStream dataInputStream = new BufferedInputStream(dataSocket.getInputStream());
+        if (type.equals("A") && !filename.split("\\.")[1].equals("txt")) {
+            writer.printf("504 Command not implemented for that parameter; TYPE is set to A (only Text-based files)\r\n");
+            return;
+        }
 
-            // Create a FileOutputStream to write the received data to the file
-            FileOutputStream outputStream = new FileOutputStream(serverDIR + currentDIR + filename);
+        if (stru.equals("R") && !filename.split("\\.")[1].equals("txt")) {
+            writer.printf("504 Command not implemented for that parameter; STRU is set to R (only Text-based files)\r\n");
+            return;
+        }
 
-            writer.printf("150 Ready to receive file [" + filename + "].\r\n");
+        writer.printf("150 Ready to receive file [" + filename + "].\r\n");
 
-            // Buffer to hold data temporarily
-            int bufferSize = 8192;
-            byte[] buffer = new byte[bufferSize];
-            int bytesRead;
-            switch (mode) {
-                case "S":
-                    while ((bytesRead = dataInputStream.read(buffer)) != -1) 
-                        outputStream.write(buffer, 0, bytesRead);
-                    break;      
-                case "B":
-                    buffer = new byte[bufferSize + 3];
-                    while ((bytesRead = dataInputStream.read(buffer)) != -1) {
-                        int dataSize = (buffer[1] << 8) | (buffer[2] & 0xFF); // Retrieving size from the 2-byte header
+        if (stru.equals("R") && type.equals("A")) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(filename), "UTF-8"));
+                DataOutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    outputStream.write(line.getBytes("UTF-8"));
+                    outputStream.write("\n".getBytes("UTF-8")); // Append newline character
+                }
 
-                        if (dataSize <= 0) {
-                            writer.printf("451: Requested action aborted. Local error in processing.");
-                            return;
-                        }
-                        outputStream.write(buffer, 3, dataSize); // Skipping the header bytes
-                    }
-                    break;
-
-                case "C":
-                    try (GZIPInputStream gzipInputStream = new GZIPInputStream(dataInputStream)) {
-                        while ((bytesRead = gzipInputStream.read(buffer)) != -1)
-                            outputStream.write(buffer, 0, bytesRead);
-                        gzipInputStream.close();
-                    }
-                    break;
-            
-                default:
-                    break;
+                reader.close();
+                outputStream.close();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
+        }
+        else {
+            try {
+                // Create a BufferedInputStream to read data from the client
+                BufferedInputStream dataInputStream = new BufferedInputStream(dataSocket.getInputStream());
 
-            // Send a success response to the client
-            writer.printf("226 Closing data connection; transfer complete\r\n");
+                // Create a FileOutputStream to write the received data to the file
+                FileOutputStream outputStream = new FileOutputStream(serverDIR + currentDIR + filename);
 
-            // Close streams
-            outputStream.close();
-            dataInputStream.close();
-            isPASV = false;
-        } catch (IOException e) {
-            e.printStackTrace();
+                // Buffer to hold data temporarily
+                int bufferSize = 8192;
+                byte[] buffer = new byte[bufferSize];
+                int bytesRead;
+                switch (mode) {
+                    case "S":
+                        while ((bytesRead = dataInputStream.read(buffer)) != -1) 
+                            outputStream.write(buffer, 0, bytesRead);
+                        break;      
+                    case "B":
+                        buffer = new byte[bufferSize + 3];
+                        while ((bytesRead = dataInputStream.read(buffer)) != -1) {
+                            int dataSize = (buffer[1] << 8) | (buffer[2] & 0xFF); // Retrieving size from the 2-byte header
+
+                            if (dataSize <= 0) {
+                                writer.printf("451: Requested action aborted. Local error in processing.\r\n");
+                                return;
+                            }
+                            outputStream.write(buffer, 3, dataSize); // Skipping the header bytes
+                        }
+                        break;
+
+                    case "C":
+                        try (GZIPInputStream gzipInputStream = new GZIPInputStream(dataInputStream)) {
+                            while ((bytesRead = gzipInputStream.read(buffer)) != -1)
+                                outputStream.write(buffer, 0, bytesRead);
+                            gzipInputStream.close();
+                        }
+                        break;
+                
+                    default:
+                        break;
+                }
+
+                // Send a success response to the client
+                writer.printf("226 Closing data connection; transfer complete\r\n");
+
+                // Close streams
+                outputStream.close();
+                dataInputStream.close();
+                isPASV = false;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -365,8 +388,31 @@ public class ClientHandler implements Runnable {
     private void handleRetrCommand(String filename) {
         File file = new File(serverDIR + currentDIR + filename);
         if (file.exists() && file.isFile()) {
+            if (type.equals("A") && !filename.split("\\.")[1].equals("txt")) {
+                writer.printf("504 Command not implemented for that parameter; TYPE is set to A (only Text-based files)\r\n");
+                return;
+            }
+
+            if (stru.equals("R") && !filename.split("\\.")[1].equals("txt")) {
+                writer.printf("504 Command not implemented for that parameter; STRU is set to R (only Text-based files)\r\n");
+                return;
+            }
+
             writer.printf("150 File status [" + filename + "] okay; about to open data connection\r\n");
-            if (mode.equals("C")) {
+
+            if (stru.equals("R") && type.equals("A")) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
+                    DataOutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        outputStream.write(line.getBytes("UTF-8"));
+                        outputStream.write("\n".getBytes("UTF-8")); // Append newline character
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            else if (mode.equals("C")) {
                 try (FileInputStream fileInputStream = new FileInputStream(file);
                     GZIPOutputStream gzipOutputStream = new GZIPOutputStream(dataSocket.getOutputStream())) {
                     byte[] buffer = new byte[8192];
@@ -397,9 +443,12 @@ public class ClientHandler implements Runnable {
                     
                     while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
                         if (mode.equals("B")) {
-                            // Send block header (description byte + size)
-                            outputStream.writeByte(1); // Description byte
-                            outputStream.writeShort(bytesRead); // Size
+                            // Block header: 1 byte for description + 2 bytes for size
+                            byte[] header = new byte[3];
+                            header[0] = 0x00; // Description byte
+                            header[1] = (byte) ((bytesRead >> 8) & 0xFF); // High byte of size
+                            header[2] = (byte) (bytesRead & 0xFF); // Low byte of size
+                            outputStream.write(header);
                         }
 
                         if (type.equals("A")) {
@@ -413,6 +462,14 @@ public class ClientHandler implements Runnable {
                         }
                         // Write file contents line by line to the data connection output stream
                         outputStream.write(buffer, 0, bytesRead);
+                    }
+
+                    if (mode.equals("B")) {
+                        byte[] header = new byte[3];
+                        header[0] = 0x40; // Description byte
+                        header[1] = 0x00; // High byte of size
+                        header[2] = 0x00; // Low byte of size
+                        outputStream.write(header);
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -452,28 +509,6 @@ public class ClientHandler implements Runnable {
         } else {
             // Send a "File not found" response to the client
             writer.printf("550 File not found\r\n");
-        }
-    }
-
-    // STOR command
-    private void storeFile(String filename) {
-        try (
-            InputStream inputStream = dataSocket.getInputStream();
-            OutputStream outputStream = new FileOutputStream(new File(serverDIR + currentDIR + filename));
-        ) {
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer))!= -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                dataSocket.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
@@ -614,7 +649,7 @@ public class ClientHandler implements Runnable {
                     fileListBuilder.append(file.getName()).append("\n");
                 } else if (file.isDirectory()) {
                     // Append directory name with trailing slash to the string
-                    fileListBuilder.append(file.getName()).append("\n");
+                    fileListBuilder.append(file.getName()).append("/\n");
                 }
             }
         }

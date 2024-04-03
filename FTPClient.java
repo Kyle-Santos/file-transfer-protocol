@@ -59,7 +59,7 @@ public class FTPClient {
 
                 // HANDLE RETR
                 if (command.equals("RETR") && response.startsWith("150")) {
-                    receiveFileData(dataSocket, clientDIR + input.split(" ")[1], mode, type);
+                    receiveFileData(dataSocket, clientDIR + input.split(" ")[1], mode, type, stru);
                     System.out.println(reader.readLine());
                     dataSocket.close();
                 }
@@ -74,10 +74,10 @@ public class FTPClient {
                     // Read all lines of the multi-line response until the final response code (226)
                     String line;
                     System.out.println();
-                    while (!(line = reader.readLine()).startsWith("226")) {
+                    do {
+                        line = reader.readLine();
                         System.out.println(line);
-                    }
-                    System.out.println(line); // Print the final response line
+                    } while (!line.startsWith("226") && !line.startsWith("214"));
                 }
                 // HANDLE PASV
                 else if (command.equals("PASV")) {
@@ -142,13 +142,28 @@ public class FTPClient {
      * @param filename The name of the file to upload
      * @param mode The transfer mode (C for compressed, B for binary, S for stream)
      * @param type The transfer type (A for ASCII, I for binary)
+     * @param stru The data stucture (F for File Structure, R for Record Structure, P for Page Structure)
      * @throws IOException If an I/O error occurs during file upload
      */
 
     private static void uploadFileData(Socket dataSocket, String filename, String mode, String type) throws IOException {
         File file = new File(filename);
         if (file.exists() && file.isFile()) {
-            if (mode.equals("C")) {
+            if (stru.equals("R") && type.equals("A")) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
+                    DataOutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        outputStream.write(line.getBytes("UTF-8"));
+                        outputStream.write("\n".getBytes("UTF-8")); // Append newline character
+                    }
+                    reader.close();
+                    outputStream.close();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            else if (mode.equals("C")) {
                 try (FileInputStream fileInputStream = new FileInputStream(file);
                     GZIPOutputStream gzipOutputStream = new GZIPOutputStream(dataSocket.getOutputStream())) {
                     byte[] buffer = new byte[8192];
@@ -165,7 +180,9 @@ public class FTPClient {
                         }
                             
                         gzipOutputStream.write(buffer, 0, bytesRead);
-                    }       
+                    }  
+                    gzipOutputStream.close();
+                    fileInputStream.close();     
                 } 
             }
             else {
@@ -218,51 +235,68 @@ public class FTPClient {
      * @param filename The name of the file to download
      * @param mode The transfer mode (S for stream, B for block, C for compressed)
      * @param type The transfer type (A for ASCII, I for binary)
+     * @param stru The data stucture (F for File Structure, R for Record Structure, P for Page Structure)
      * @throws IOException If an I/O error occurs during file download
      */
 
-    private static void receiveFileData(Socket dataSocket, String filename, String mode, String type) throws IOException {
-        try (InputStream dataInputStream = new BufferedInputStream(dataSocket.getInputStream());
-            FileOutputStream outputStream = new FileOutputStream(filename)) {
-            int bufferSize = 8192;
-            byte[] buffer = new byte[bufferSize];
-            int bytesRead;
-            switch (mode) {
-                case "S":
-                    while ((bytesRead = dataInputStream.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, bytesRead);
-                        outputStream.flush();
-                    }
-                    break;      
-                case "B":
-                    buffer = new byte[bufferSize + 3];
-                    while ((bytesRead = dataInputStream.read(buffer)) != -1) {
-                        int dataSize = (buffer[1] << 8) | (buffer[2] & 0xFF); // Retrieving size from the 2-byte header
+    private static void receiveFileData(Socket dataSocket, String filename, String mode, String type, String stru) throws IOException {
+        // handle STRU R & TYPE A
+        if (stru.equals("R") && type.equals("A")) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(filename), "UTF-8"));
+                DataOutputStream outputStream = new DataOutputStream(dataSocket.getOutputStream())) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    outputStream.write(line.getBytes("UTF-8"));
+                    outputStream.write("\n".getBytes("UTF-8")); // Append newline character
+                }
 
-                        if (dataSize <= 0) {
-                            System.out.println("451: Requested action aborted. Local error in processing.");
-                            break;
-                        }
-
-                        System.out.println(buffer[0] + " " + buffer[1] + " " + buffer[2] + " " + dataSize);
-                        outputStream.write(buffer, 3, dataSize); // Skipping the header bytes
-                    }
-                    break;
-
-                case "C":
-                    try (GZIPInputStream gzipInputStream = new GZIPInputStream(dataInputStream)) {
-                        while ((bytesRead = gzipInputStream.read(buffer)) != -1) {
-                            outputStream.write(buffer, 0, bytesRead);
-                        }
-                    }
-                    break;
-            
-                default:
-                    break;
+                reader.close();
+                outputStream.close();
             }
-            // Close the outputStream & InputStream after data transfer completes 
-            dataInputStream.close();
-            outputStream.close();
+        }
+        else {
+            try (InputStream dataInputStream = new BufferedInputStream(dataSocket.getInputStream());
+                FileOutputStream outputStream = new FileOutputStream(filename)) {
+                int bufferSize = 8192;
+                byte[] buffer = new byte[bufferSize];
+                int bytesRead;
+                switch (mode) {
+                    case "S":
+                        while ((bytesRead = dataInputStream.read(buffer)) != -1) {
+                            outputStream.write(buffer, 0, bytesRead);
+                            outputStream.flush();
+                        }
+                        break;      
+                    case "B":
+                        buffer = new byte[bufferSize + 3];
+                        while ((bytesRead = dataInputStream.read(buffer)) != -1) {
+                            int dataSize = (buffer[1] << 8) | (buffer[2] & 0xFF); // Retrieving size from the 2-byte header
+
+                            if (dataSize <= 0) {
+                                System.out.println("451: Requested action aborted. Local error in processing.");
+                                break;
+                            }
+
+                            System.out.println(buffer[0] + " " + buffer[1] + " " + buffer[2] + " " + dataSize);
+                            outputStream.write(buffer, 3, dataSize); // Skipping the header bytes
+                        }
+                        break;
+
+                    case "C":
+                        try (GZIPInputStream gzipInputStream = new GZIPInputStream(dataInputStream)) {
+                            while ((bytesRead = gzipInputStream.read(buffer)) != -1) {
+                                outputStream.write(buffer, 0, bytesRead);
+                            }
+                        }
+                        break;
+                
+                    default:
+                        break;
+                }
+                // Close the outputStream & InputStream after data transfer completes 
+                dataInputStream.close();
+                outputStream.close();
+            }
         }
     }
 }
