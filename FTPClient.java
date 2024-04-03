@@ -155,9 +155,16 @@ public class FTPClient {
                     
                     while ((bytesRead = bufferedInputStream.read(buffer)) != -1) {
                         if (mode.equals("B")) {
+                            // Block header: 1 byte for description + 2 bytes for size
+                            byte[] header = new byte[3];
+                            header[0] = 1; // Description byte
+                            header[1] = (byte) ((bytesRead >> 8) & 0xFF); // High byte of size
+                            header[2] = (byte) (bytesRead & 0xFF); // Low byte of size
+                            outputStream.write(header);
+
                             // Send block header (description byte + size)
-                            outputStream.writeByte(1); // Description byte
-                            outputStream.writeShort(bytesRead); // Size
+                            // outputStream.writeByte(1); // Description byte
+                            // outputStream.writeShort(bytesRead); // Size
                         }
 
                         if (type.equals("A")) {

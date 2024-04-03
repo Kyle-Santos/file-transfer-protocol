@@ -4,7 +4,12 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+<<<<<<< HEAD
+=======
+import java.io.FileReader;
+>>>>>>> 7661975acd547d528068ac5117494cffc475f58d
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
@@ -197,10 +202,32 @@ public class ClientHandler implements Runnable {
                         break;
                 
                     case "STOR":
+<<<<<<< HEAD
                         if (parts.length < 2)
                             writer.printf("501 Syntax error in parameters or arguments\r\n");
                         else 
                             handleSTORCommand(parts[1]);
+=======
+                        if (parts.length < 2) {
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
+                        }
+                        else {
+                            writer.printf("150 Opening data connection\n");
+
+                            // Check if the file already exists
+                            File file = new File(serverDIR + currentDIR + parts[1]);
+
+                            if (file.exists()) {
+                            // If the file exists, return an error message
+                            writer.printf("550 File already exists\r\n");
+                            }
+                            else {
+                            // If the file does not exist, store the file
+                                storeFile(parts[1]);
+                                writer.printf("226 Transfer complete\r\n");
+                            }
+                        }
+>>>>>>> 7661975acd547d528068ac5117494cffc475f58d
                         break;
                     case "HELP":
                         // Send a response containing detailed help information for each command
@@ -427,6 +454,28 @@ public class ClientHandler implements Runnable {
         } else {
             // Send a "File not found" response to the client
             writer.printf("550 File not found\r\n");
+        }
+    }
+
+    // STOR command
+    private void storeFile(String filename) {
+        try (
+            InputStream inputStream = dataSocket.getInputStream();
+            OutputStream outputStream = new FileOutputStream(new File(serverDIR + currentDIR + filename));
+        ) {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer))!= -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                dataSocket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
