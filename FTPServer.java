@@ -12,6 +12,7 @@
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Scanner;
 
 public class FTPServer {
     //Array of user information for authentication.
@@ -39,6 +40,10 @@ public class FTPServer {
     }
     public static void main(String[] args) {
         int port = 2048; // Change port if needed
+
+        Scanner scan = new Scanner(System.in);
+        System.out.print("Enter a port number: ");
+        port = scan.nextInt();
 
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("FTP Server started on port " + port);

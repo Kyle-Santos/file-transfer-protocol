@@ -22,6 +22,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.Scanner;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -31,6 +32,11 @@ public class FTPClient {
         String host = "127.0.0.1"; // Change host if needed
         int port = 2048; // Change port if needed
         String clientDIR = "Clients/";
+        Scanner scan = new Scanner(System.in);
+        System.out.print("Enter an IP address (127.0.0.1): ");
+        host = scan.nextLine();
+        System.out.print("Enter a port number: ");
+        port = scan.nextInt();
 
         try (Socket socket = new Socket(host, port);
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -146,7 +152,7 @@ public class FTPClient {
      * @throws IOException If an I/O error occurs during file upload
      */
 
-    private static void uploadFileData(Socket dataSocket, String filename, String mode, String type) throws IOException {
+    private static void uploadFileData(Socket dataSocket, String filename, String mode, String type, String stru) throws IOException {
         File file = new File(filename);
         if (file.exists() && file.isFile()) {
             if (stru.equals("R") && type.equals("A")) {
@@ -238,7 +244,7 @@ public class FTPClient {
      * @param stru The data stucture (F for File Structure, R for Record Structure, P for Page Structure)
      * @throws IOException If an I/O error occurs during file download
      */
-    
+
     private static void receiveFileData(Socket dataSocket, String filename, String mode, String type, String stru) throws IOException {
         // handle STRU R & TYPE A
         if (stru.equals("R") && type.equals("A")) {

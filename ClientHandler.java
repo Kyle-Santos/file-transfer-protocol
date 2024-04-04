@@ -33,7 +33,7 @@ public class ClientHandler implements Runnable {
     private PrintWriter writer;
     private final int MIN_PASSIVE_PORT = 49152; // Minimum passive port number
     private final int MAX_PASSIVE_PORT = 65535; // Maximum passive port number
-    private String serverDIR = "Server";
+    private String serverDIR = "Server/home";
     private String parentDIR = "";
     private String currentDIR = "/";
     private User currentUser = null;
