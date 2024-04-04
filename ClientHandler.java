@@ -157,6 +157,9 @@ public class ClientHandler implements Runnable {
                         writer.printf("257 \"" + currentDIR + "\" is the current directory\r\n");
                         break;
                     case "CWD":
+                        if (parts.length < 2) {
+                            writer.printf("501 Syntax error in parameters or arguments\r\n");
+                        }
                         if(checkDIRExist(serverDIR + currentDIR + parts[1])) {
                             parentDIR = currentDIR;
                             currentDIR += parts[1] + "/";

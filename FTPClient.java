@@ -71,7 +71,7 @@ public class FTPClient {
                 }
                 // HANDLE STOR
                 else if (command.equals("STOR") && response.startsWith("150")) {
-                    uploadFileData(dataSocket, clientDIR + input.split(" ")[1], mode, type);
+                    uploadFileData(dataSocket, clientDIR + input.split(" ")[1], mode, type, stru);
                     System.out.println(reader.readLine());
                     dataSocket.close();
                 } 
