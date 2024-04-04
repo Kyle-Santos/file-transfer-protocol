@@ -15,12 +15,15 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Random;
@@ -675,13 +678,26 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // generate a random port
+/**
+ * Generates a random port number within a specified range.
+ * @return A randomly generated port number between {@link #MIN_PASSIVE_PORT} and {@link #MAX_PASSIVE_PORT}.
+*/
+
     private int getRandomPort() {
         Random random = new Random();
         return random.nextInt(MAX_PASSIVE_PORT - MIN_PASSIVE_PORT + 1) + MIN_PASSIVE_PORT;
     }
 
-    // checks if DIR exists
+/**
+ * Checks if a directory exists at the specified path.
+ *
+ * @param directory The path of the directory to be checked.
+ * @return {@code true} if the directory exists and is a directory, {@code false} otherwise.
+ * @throws NullPointerException If the specified directory path is null.
+ * @throws InvalidPathException If the specified directory path is invalid.
+ * @throws SecurityException If a security manager exists and its {@code checkRead} method denies read access to the directory.
+*/
+
     private Boolean checkDIRExist(String directory) {
         // Get the absolute path of the directory
         Path directoryPath = Paths.get(directory).toAbsolutePath();
@@ -693,7 +709,14 @@ public class ClientHandler implements Runnable {
         return directoryExists;
     }
 
-    // Method to get the parent directory
+/**
+ * Retrieves the parent directory of a given directory path.
+ *
+ * @param directory The path of the directory whose parent directory is to be retrieved.
+ * @return The parent directory path of the specified directory, or an empty string if the directory has no parent.
+ * @throws NullPointerException If the specified directory path is null.
+*/
+
     private String getParentDirectory(String directory) {
         int lastSlashIndex = directory.lastIndexOf('/');
         directory = directory.substring(0, lastSlashIndex);
@@ -708,7 +731,15 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // Method to recursively delete a directory
+/**
+ * Deletes a directory and all its contents recursively if it exists and is a directory.
+ *
+ * @param directory The directory to be deleted.
+ * @return {@code true} if the directory and its contents were successfully deleted, {@code false} otherwise.
+ * @throws NullPointerException If the specified directory is null.
+ * @throws SecurityException    If a security manager exists and its {@code checkDelete} method denies delete access to the directory or any of its contents.
+ */
+
     private boolean deleteDirectory(File directory) {
         if (!directory.exists() || !directory.isDirectory()) {
             return false;
@@ -732,7 +763,13 @@ public class ClientHandler implements Runnable {
         return directory.delete();
     }
 
-    // Method to handle LIST command and return string representation of files
+/**
+ * Generates a list of files and directories in the specified directory.
+ *
+ * @param currentDirectory The path of the directory to generate the list for.
+ * @return A formatted string containing the list of files and directories in the specified directory.
+ * @throws NullPointerException If the specified directory path is null.
+*/
     private String getFileList(String currentDirectory) {
         StringBuilder fileListBuilder = new StringBuilder();
         File directory = new File(currentDirectory);
